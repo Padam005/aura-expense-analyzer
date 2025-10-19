@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,15 +11,58 @@ import {
   PieChart,
   Calendar,
   Brain,
-  Upload,
-  Plus
+  Upload
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "@/hooks/use-toast";
+import { ExpenseForm } from "@/components/ExpenseForm";
+import { ExpenseList } from "@/components/ExpenseList";
+import { MLPredictor } from "@/components/MLPredictor";
+import { ReceiptOCR } from "@/components/ReceiptOCR";
+import { Analytics } from "@/components/Analytics";
 
 const Dashboard = () => {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState("overview");
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
+  const [stats, setStats] = useState({
+    totalExpenses: 0,
+    monthlyTotal: 0,
+    categoriesCount: 0,
+  });
+
+  useEffect(() => {
+    fetchStats();
+  }, [refreshTrigger]);
+
+  const fetchStats = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data: expenses } = await supabase
+        .from('expenses')
+        .select('*')
+        .eq('user_id', user.id);
+
+      if (expenses) {
+        const total = expenses.reduce((sum, exp) => sum + Number(exp.amount), 0);
+        const currentMonth = new Date().toISOString().substring(0, 7);
+        const monthlyTotal = expenses
+          .filter(exp => exp.month_year === currentMonth)
+          .reduce((sum, exp) => sum + Number(exp.amount), 0);
+        const uniqueCategories = new Set(expenses.map(exp => exp.category));
+
+        setStats({
+          totalExpenses: total,
+          monthlyTotal,
+          categoriesCount: uniqueCategories.size,
+        });
+      }
+    } catch (error) {
+      console.error('Error fetching stats:', error);
+    }
+  };
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -27,11 +70,11 @@ const Dashboard = () => {
     navigate("/");
   };
 
-  const stats = [
-    { title: "Total Expenses", value: "$0", icon: DollarSign, color: "text-blue-500" },
-    { title: "Monthly Budget", value: "$0", icon: TrendingUp, color: "text-green-500" },
-    { title: "Categories", value: "0", icon: PieChart, color: "text-purple-500" },
-    { title: "This Month", value: "$0", icon: Calendar, color: "text-orange-500" },
+  const statsCards = [
+    { title: "Total Expenses", value: `$${stats.totalExpenses.toFixed(2)}`, icon: DollarSign, color: "text-blue-500" },
+    { title: "This Month", value: `$${stats.monthlyTotal.toFixed(2)}`, icon: Calendar, color: "text-orange-500" },
+    { title: "Categories", value: stats.categoriesCount.toString(), icon: PieChart, color: "text-purple-500" },
+    { title: "Avg/Day", value: `$${(stats.monthlyTotal / new Date().getDate()).toFixed(2)}`, icon: TrendingUp, color: "text-green-500" },
   ];
 
   return (
@@ -92,7 +135,7 @@ const Dashboard = () => {
           {activeTab === "overview" && (
             <>
               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-                {stats.map((stat) => (
+                {statsCards.map((stat) => (
                   <Card key={stat.title}>
                     <CardHeader className="flex flex-row items-center justify-between pb-2">
                       <CardTitle className="text-sm font-medium text-muted-foreground">
@@ -107,75 +150,30 @@ const Dashboard = () => {
                 ))}
               </div>
 
-              <Card>
-                <CardHeader>
-                  <CardTitle>Quick Actions</CardTitle>
-                </CardHeader>
-                <CardContent className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                  <Button className="h-24 flex-col gap-2">
-                    <Plus className="h-6 w-6" />
-                    Add Expense
-                  </Button>
-                  <Button className="h-24 flex-col gap-2" variant="outline">
-                    <Upload className="h-6 w-6" />
-                    Upload Receipt
-                  </Button>
-                  <Button className="h-24 flex-col gap-2" variant="outline">
-                    <Brain className="h-6 w-6" />
-                    AI Prediction
-                  </Button>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle>Recent Expenses</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-center py-12 text-muted-foreground">
-                    <DollarSign className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                    <p>No expenses yet. Add your first expense to get started!</p>
-                  </div>
-                </CardContent>
-              </Card>
+              <div className="grid gap-6 md:grid-cols-2">
+                <ExpenseForm onSuccess={() => setRefreshTrigger(prev => prev + 1)} />
+                <ExpenseList refreshTrigger={refreshTrigger} />
+              </div>
             </>
           )}
 
+          {activeTab === "expenses" && (
+            <div className="grid gap-6 md:grid-cols-2">
+              <ExpenseForm onSuccess={() => setRefreshTrigger(prev => prev + 1)} />
+              <ExpenseList refreshTrigger={refreshTrigger} />
+            </div>
+          )}
+
           {activeTab === "ml-predictor" && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Brain className="h-5 w-5" />
-                  ML-Powered Expense Predictor
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-center py-12">
-                  <Brain className="h-16 w-16 mx-auto mb-4 text-purple-500" />
-                  <h3 className="text-xl font-semibold mb-2">AI Predictions Coming Soon</h3>
-                  <p className="text-muted-foreground">
-                    Add expenses to train the ML model for intelligent predictions
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
+            <MLPredictor />
           )}
 
           {activeTab === "receipt-ocr" && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Receipt OCR Scanner</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="border-2 border-dashed border-muted-foreground/25 rounded-lg p-12 text-center">
-                  <Upload className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-                  <p className="text-muted-foreground">
-                    Upload receipt images to automatically extract expense data
-                  </p>
-                  <Button className="mt-4">Choose File</Button>
-                </div>
-              </CardContent>
-            </Card>
+            <ReceiptOCR />
+          )}
+
+          {activeTab === "analytics" && (
+            <Analytics />
           )}
         </div>
       </main>

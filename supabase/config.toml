@@ -1,1 +1,10 @@
 project_id = "ymcgrsvdotgxecnjkrec"
+
+[functions.ml-predict-expenses]
+verify_jwt = true
+
+[functions.categorize-expense]
+verify_jwt = true
+
+[functions.ocr-receipt]
+verify_jwt = true
